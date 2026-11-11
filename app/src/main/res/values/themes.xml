@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Sonora</string>
+    <string name="widget_description">Now playing with quick controls</string>
     <color name="bg">#FF09090B</color>
     <color name="ic_launcher_background">#FF09090B</color>
 

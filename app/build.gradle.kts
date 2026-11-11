@@ -80,6 +80,10 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.palette:palette-ktx:1.0.0")
 
+    // Home screen widget
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
     // Playback
     val media3 = "1.5.1"
     implementation("androidx.media3:media3-exoplayer:$media3")

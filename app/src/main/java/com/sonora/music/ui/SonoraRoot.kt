@@ -14,8 +14,21 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -90,15 +103,21 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
+                // Floating dock: mini player stacked on a pill-shaped nav bar
                 Column(
-                    Modifier.background(Brush.verticalGradient(listOf(Color.Transparent, bg.copy(alpha = 0.94f), bg)))
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, bg.copy(alpha = 0.85f), bg)))
+                        .padding(top = 20.dp)
+                        .navigationBarsPadding()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
                 ) {
                     AnimatedVisibility(
                         visible = state.current != null,
                         enter = slideInVertically { it } + fadeIn(),
                         exit = slideOutVertically { it } + fadeOut(),
                     ) {
-                        MiniPlayer(state, onExpand = { expanded = true })
+                        MiniPlayer(state, onExpand = { expanded = true }, modifier = Modifier.padding(bottom = 8.dp))
                     }
                     BottomNav(nav)
                 }
@@ -155,28 +174,65 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
 private fun BottomNav(nav: NavHostController) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
-    NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .shadow(16.dp, CircleShape)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.97f))
+            .border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Tabs.forEach { tab ->
             val selected = route == tab.route || (tab.route == "library" && route?.startsWith("collection") == true)
-            NavigationBarItem(
-                selected = selected,
-                onClick = {
-                    nav.navigate(tab.route) {
-                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
-                icon = { Icon(if (selected) tab.selected else tab.unselected, tab.label) },
-                label = { Text(tab.label) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onBackground,
-                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    indicatorColor = Color.Transparent,
-                ),
-            )
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        if (!selected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        nav.navigate(tab.route) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                NavPill(tab, selected)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPill(tab: Tab, selected: Boolean) {
+    val container by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        tween(250), label = "navBg",
+    )
+    val content by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        tween(250), label = "navFg",
+    )
+    Row(
+        Modifier
+            .clip(CircleShape)
+            .background(container)
+            .animateContentSize(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(if (selected) tab.selected else tab.unselected, tab.label, tint = content, modifier = Modifier.size(24.dp))
+        if (selected) {
+            Spacer(Modifier.width(8.dp))
+            Text(tab.label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
         }
     }
 }

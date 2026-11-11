@@ -1,6 +1,8 @@
 package com.sonora.music.ui.theme
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -49,5 +51,8 @@ private val SonoraTypography = Base.copy(
 
 @Composable
 fun SonoraTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Scheme, typography = SonoraTypography, content = content)
+    MaterialTheme(colorScheme = Scheme, typography = SonoraTypography) {
+        // Without this, any Text/Icon outside a Surface defaults to black.
+        CompositionLocalProvider(LocalContentColor provides Scheme.onBackground, content = content)
+    }
 }

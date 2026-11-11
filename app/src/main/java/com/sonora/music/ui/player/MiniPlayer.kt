@@ -5,6 +5,8 @@ package com.sonora.music.ui.player
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -46,11 +48,12 @@ fun MiniPlayer(state: PlayerState, onExpand: () -> Unit, modifier: Modifier = Mo
 
     Box(
         modifier
-            .padding(horizontal = 8.dp, vertical = 4.dp)
             .fillMaxWidth()
             .graphicsLayer { translationX = swipeX * 0.5f }
-            .clip(RoundedCornerShape(10.dp))
-            .background(lerp(accent, Color.Black, 0.55f))
+            .shadow(12.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(lerp(accent, Color(0xFF101013), 0.6f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
             .clickable(onClick = onExpand)
             .pointerInput(Unit) {
                 val threshold = 80.dp.toPx()
