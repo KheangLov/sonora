@@ -21,12 +21,7 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.layout.RowScope
 import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxWidth
-import androidx.glance.Image
-import androidx.glance.LocalSize
-import androidx.glance.appwidget.SizeMode
-import androidx.glance.layout.RowScope
-import androidx.glance.layout.fillMaxHeight
-import androidx.glance.layout.fillMaxWidthProvider
+import androidx.glance.ImageProvider
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
