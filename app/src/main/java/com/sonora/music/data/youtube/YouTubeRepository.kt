@@ -9,7 +9,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Image
+import org.schabi.newpipe.extractor.InfoItem
+import org.schabi.newpipe.extractor.ListExtractor
+import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -38,19 +42,103 @@ class YouTubeRepository {
 
     // ---------------------------------------------------------------- search
 
-    suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
-        // YouTube Music "songs" filter first: clean audio tracks with square art.
-        val songs = runCatching { searchWith(query, YoutubeSearchQueryHandlerFactory.MUSIC_SONGS) }
-            .getOrDefault(emptyList())
-        songs.ifEmpty { searchWith(query, YoutubeSearchQueryHandlerFactory.VIDEOS) }
+    /** Paging state for one search: YouTube Music songs + regular YouTube videos, side by side. */
+    class SearchSession internal constructor(
+        val query: String,
+        internal val songsHandler: SearchQueryHandler,
+        internal val videosHandler: SearchQueryHandler,
+    ) {
+        internal var songsPage: Page? = null
+        internal var videosPage: Page? = null
+        internal val seenIds = HashSet<String>()
+        internal val seenKeys = HashSet<String>()
+        internal var offset = 0
+        val hasMore: Boolean get() = Page.isValid(songsPage) || Page.isValid(videosPage)
     }
 
-    private fun searchWith(query: String, filter: String): List<Song> {
-        val handler = yt.searchQHFactory.fromQuery(query, listOf(filter), "")
-        return SearchInfo.getInfo(yt, handler).relatedItems
-            .filterIsInstance<StreamInfoItem>()
-            .mapNotNull { it.toSongOrNull() }
-            .distinctBy { it.id }
+    data class SearchResult(
+        val session: SearchSession,
+        val songs: List<Song>,
+        /** YouTube auto-corrected the spelling: "Showing results for …" */
+        val correctedTo: String?,
+        /** YouTube suggests a better spelling: "Did you mean …?" */
+        val didYouMean: String?,
+    )
+
+    suspend fun search(query: String): List<Song> = startSearch(query).songs
+
+    suspend fun startSearch(query: String): SearchResult = withContext(Dispatchers.IO) {
+        val session = SearchSession(
+            query,
+            yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), ""),
+            yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.VIDEOS), ""),
+        )
+        val (songsInfo, videosInfo) = coroutineScope {
+            val s = async { runCatching { SearchInfo.getInfo(yt, session.songsHandler) }.getOrNull() }
+            val v = async { runCatching { SearchInfo.getInfo(yt, session.videosHandler) }.getOrNull() }
+            s.await() to v.await()
+        }
+        if (songsInfo == null && videosInfo == null) throw IOException("Search failed")
+
+        session.songsPage = songsInfo?.nextPage
+        session.videosPage = videosInfo?.nextPage
+        val songs = rankAndAppend(
+            session,
+            songsInfo?.relatedItems.orEmpty().filterIsInstance<StreamInfoItem>(),
+            videosInfo?.relatedItems.orEmpty().filterIsInstance<StreamInfoItem>(),
+        )
+
+        val info = videosInfo ?: songsInfo
+        val suggestion = info?.searchSuggestion?.takeIf { it.isNotBlank() && !it.equals(query, ignoreCase = true) }
+        SearchResult(
+            session = session,
+            songs = songs,
+            correctedTo = suggestion?.takeIf { info?.isCorrectedSearch == true },
+            didYouMean = suggestion?.takeIf { info?.isCorrectedSearch != true },
+        )
+    }
+
+    /** Next page from both sources, ranked, without repeating anything already shown. */
+    suspend fun loadMore(session: SearchSession): List<Song> = withContext(Dispatchers.IO) {
+        val (songItems, videoItems) = coroutineScope {
+            val s = async { fetchPage(session.songsHandler, session.songsPage) }
+            val v = async { fetchPage(session.videosHandler, session.videosPage) }
+            s.await() to v.await()
+        }
+        session.songsPage = songItems?.nextPage
+        session.videosPage = videoItems?.nextPage
+        if (songItems == null && videoItems == null) throw IOException("Couldn't load more")
+        rankAndAppend(
+            session,
+            songItems?.items.orEmpty().filterIsInstance<StreamInfoItem>(),
+            videoItems?.items.orEmpty().filterIsInstance<StreamInfoItem>(),
+        )
+    }
+
+    private fun fetchPage(handler: SearchQueryHandler, page: Page?): ListExtractor.InfoItemsPage<InfoItem>? {
+        if (!Page.isValid(page)) return null
+        return runCatching { SearchInfo.getMoreItems(yt, handler, page) }.getOrNull()
+    }
+
+    private fun rankAndAppend(
+        session: SearchSession,
+        songItems: List<StreamInfoItem>,
+        videoItems: List<StreamInfoItem>,
+    ): List<Song> {
+        val ranker = SearchRanker(session.query)
+        val scored = buildList {
+            songItems.forEachIndexed { i, item -> add(ranker.score(item, i + session.offset, isMusicSong = true) to item) }
+            videoItems.forEachIndexed { i, item -> add(ranker.score(item, i + session.offset, isMusicSong = false) to item) }
+        }
+        session.offset += maxOf(songItems.size, videoItems.size)
+        return scored
+            .filter { it.first > SearchRanker.MIN_SCORE }
+            .sortedByDescending { it.first }
+            .mapNotNull { (_, item) -> item.toSongOrNull() }
+            .filter { song ->
+                // Drop exact repeats and the same track re-uploaded under the same title/artist.
+                session.seenIds.add(song.id) && session.seenKeys.add(SearchRanker.dedupeKey(song))
+            }
     }
 
     suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {

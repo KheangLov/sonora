@@ -59,7 +59,14 @@ sealed interface SearchResults {
     data object Idle : SearchResults
     data object Loading : SearchResults
     data object Error : SearchResults
-    data class Success(val songs: List<Song>) : SearchResults
+    data class Success(
+        val songs: List<Song>,
+        val hasMore: Boolean = false,
+        val loadingMore: Boolean = false,
+        val loadMoreFailed: Boolean = false,
+        val correctedTo: String? = null,
+        val didYouMean: String? = null,
+    ) : SearchResults
 }
 
 class SearchViewModel : ViewModel() {
@@ -95,10 +102,44 @@ class SearchViewModel : ViewModel() {
         submitted.value = term
         results.value = SearchResults.Loading
         searchJob?.cancel()
+        session = null
         searchJob = viewModelScope.launch {
             lib.addSearch(term)
-            results.value = runCatching { repo.search(term) }
-                .fold({ SearchResults.Success(it) }, { SearchResults.Error })
+            results.value = runCatching { repo.startSearch(term) }.fold(
+                { r ->
+                    session = r.session
+                    SearchResults.Success(
+                        songs = r.songs,
+                        hasMore = r.session.hasMore,
+                        correctedTo = r.correctedTo,
+                        didYouMean = r.didYouMean,
+                    )
+                },
+                { SearchResults.Error },
+            )
+        }
+    }
+
+    private var session: com.sonora.music.data.youtube.YouTubeRepository.SearchSession? = null
+
+    fun loadMore() {
+        val current = results.value as? SearchResults.Success ?: return
+        val s = session ?: return
+        if (current.loadingMore || !current.hasMore) return
+        results.value = current.copy(loadingMore = true, loadMoreFailed = false)
+        searchJob = viewModelScope.launch {
+            val more = runCatching { repo.loadMore(s) }
+            if (session !== s) return@launch // a new search started meanwhile
+            val latest = results.value as? SearchResults.Success ?: return@launch
+            results.value = more.fold(
+                { list ->
+                    latest.copy(songs = latest.songs + list, loadingMore = false, hasMore = s.hasMore)
+                },
+                { latest.copy(loadingMore = false, loadMoreFailed = true) },
+            )
+            // A page can be entirely filtered out as duplicates — keep going automatically.
+            val now = results.value as? SearchResults.Success
+            if (more.isSuccess && more.getOrNull().isNullOrEmpty() && now?.hasMore == true) loadMore()
         }
     }
 
@@ -162,7 +203,34 @@ fun SearchScreen(bottomPadding: Dp, vm: SearchViewModel = viewModel()) {
                                 EmptyState(Icons.Rounded.SearchOff, "No results for \"$query\"", "Try different keywords or check the spelling.")
                             }
                         } else {
-                            itemsIndexed(r.songs, key = { i, s -> "r_${i}_${s.id}" }) { _, s ->
+                            val hint = r.correctedTo?.let { "Showing results for" to it }
+                                ?: r.didYouMean?.let { "Did you mean" to it }
+                            if (hint != null) {
+                                item(key = "spell") {
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clickable(enabled = r.didYouMean != null) { submit(hint.second) }
+                                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                                    ) {
+                                        Text(
+                                            "${hint.first} ",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            hint.second + if (r.didYouMean != null) "?" else "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
+                            itemsIndexed(r.songs, key = { _, s -> "r_${s.id}" }) { i, s ->
+                                // Infinite scroll: prefetch when 6 rows from the end
+                                if (i >= r.songs.size - 6 && r.hasMore && !r.loadingMore && !r.loadMoreFailed) {
+                                    LaunchedEffect(r.songs.size) { vm.loadMore() }
+                                }
                                 SongRow(
                                     s,
                                     onClick = { AppGraph.player.playRadio(s) },
@@ -170,6 +238,29 @@ fun SearchScreen(bottomPadding: Dp, vm: SearchViewModel = viewModel()) {
                                     isPlaying = player.isPlaying,
                                     onMore = { menuSong = s },
                                 )
+                            }
+                            item(key = "footer") {
+                                Box(
+                                    Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    when {
+                                        r.loadingMore -> CircularProgressIndicator(
+                                            Modifier.size(28.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            strokeWidth = 3.dp,
+                                        )
+                                        r.loadMoreFailed -> OutlinedButton(onClick = { vm.loadMore() }) {
+                                            Text("Couldn't load more · Retry")
+                                        }
+                                        r.hasMore -> OutlinedButton(onClick = { vm.loadMore() }) { Text("Load more") }
+                                        else -> Text(
+                                            "That's everything for \"$query\"",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             }
                         }
                 }
