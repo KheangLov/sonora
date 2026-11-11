@@ -292,7 +292,7 @@ private fun QuickPicks(section: HomeSection, player: PlayerState, onPlay: (Song)
     SectionHeader(section.title, section.subtitle)
     LazyHorizontalGrid(
         rows = GridCells.Fixed(4),
-        modifier = Modifier.fillMaxWidth().height(4 * 64.dp),
+        modifier = Modifier.fillMaxWidth().height((4 * 64).dp),
         contentPadding = PaddingValues(horizontal = 8.dp),
     ) {
         items(section.songs.size, key = { section.songs[it].id }) { i ->
