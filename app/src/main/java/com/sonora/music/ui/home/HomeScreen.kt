@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import com.sonora.music.data.youtube.YtCollection
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -77,7 +80,13 @@ class HomeViewModel : ViewModel() {
     val mood = MutableStateFlow<Mood?>(null)
     val moodSongs = MutableStateFlow<List<Song>?>(null)
 
-    init { refresh(force = false) }
+    init {
+        refresh(force = false)
+        // Signing in / out swaps between the generic and your personal YouTube Music home.
+        viewModelScope.launch {
+            AppGraph.account.state.map { it?.cookie }.distinctUntilChanged().drop(1).collect { refresh(force = true) }
+        }
+    }
 
     fun refresh(force: Boolean) {
         viewModelScope.launch {
@@ -109,8 +118,10 @@ class HomeViewModel : ViewModel() {
 fun HomeScreen(
     bottomPadding: Dp,
     onOpenCollection: (String) -> Unit,
+    onOpenRemote: (YtCollection) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
+    val account by AppGraph.account.state.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val recent by vm.recent.collectAsStateWithLifecycle()
@@ -133,7 +144,7 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomPadding + 16.dp)) {
-                item(key = "header") { HomeHeader(onHistory = { onOpenCollection("history") }) }
+                item(key = "header") { HomeHeader(account?.name, onHistory = { onOpenCollection("history") }) }
                 item(key = "moods") { MoodChips(mood, vm::selectMood) }
 
                 val selectedMood = mood
@@ -174,10 +185,15 @@ fun HomeScreen(
                         }
                         is HomeUi.Content -> state.sections.forEachIndexed { index, section ->
                             item(key = "section_$index") {
-                                if (index == 0) {
+                                if (section.collections.isEmpty() && section.songs.size >= 8 && (index == 0 || section.title.contains("pick", ignoreCase = true))) {
                                     QuickPicks(section, player, onPlay = conn::playRadio, onMore = { menuSong = it })
                                 } else {
-                                    SongCarousel(section, player, onPlay = { i -> conn.play(section.songs, i) }, onMore = { menuSong = it })
+                                    SongCarousel(
+                                        section, player,
+                                        onPlay = { i -> conn.play(section.songs, i) },
+                                        onMore = { menuSong = it },
+                                        onOpenRemote = onOpenRemote,
+                                    )
                                 }
                             }
                         }
@@ -197,13 +213,18 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
 }
 
 @Composable
-private fun HomeHeader(onHistory: () -> Unit) {
+private fun HomeHeader(name: String?, onHistory: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(greeting(), style = MaterialTheme.typography.headlineMedium)
+            Text(
+                greeting() + (name?.substringBefore(' ')?.let { ", $it" } ?: ""),
+                style = MaterialTheme.typography.headlineMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 "What's the vibe today?",
                 style = MaterialTheme.typography.bodyMedium,
@@ -339,12 +360,21 @@ private fun QuickPicks(section: HomeSection, player: PlayerState, onPlay: (Song)
 }
 
 @Composable
-private fun SongCarousel(section: HomeSection, player: PlayerState, onPlay: (Int) -> Unit, onMore: (Song) -> Unit) {
+private fun SongCarousel(
+    section: HomeSection,
+    player: PlayerState,
+    onPlay: (Int) -> Unit,
+    onMore: (Song) -> Unit,
+    onOpenRemote: (YtCollection) -> Unit,
+) {
     SectionHeader(section.title, section.subtitle)
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        items(section.collections, key = { "c_" + it.id }) { c ->
+            CollectionCard(c, onClick = { onOpenRemote(c) })
+        }
         itemsIndexed(section.songs, key = { _, s -> s.id }) { i, s ->
             SongCard(
                 s,
@@ -366,5 +396,25 @@ private fun HomeSkeleton() {
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             repeat(3) { Box(Modifier.size(148.dp).shimmer(10.dp)) }
         }
+    }
+}
+
+@Composable
+private fun CollectionCard(c: YtCollection, onClick: () -> Unit) {
+    val isArtist = c.id.startsWith("UC")
+    Column(
+        Modifier.width(148.dp).clip(RoundedCornerShape(10.dp)).combinedClickable(onClick = onClick),
+        horizontalAlignment = if (isArtist) Alignment.CenterHorizontally else Alignment.Start,
+    ) {
+        Artwork(c.thumbnail, Modifier.size(148.dp), if (isArtist) 74.dp else 10.dp, 420)
+        Spacer(Modifier.height(8.dp))
+        Text(c.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            c.subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

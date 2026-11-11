@@ -198,9 +198,23 @@ class YouTubeRepository {
 
     private class Spec(val title: String, val subtitle: String?, val load: suspend () -> List<Song>)
 
+    fun clearHomeCache() {
+        homeCache = null
+    }
+
     suspend fun home(seed: Song?, force: Boolean = false): List<HomeSection> {
         homeCache?.let { (ts, data) ->
             if (!force && System.currentTimeMillis() - ts < 30 * 60 * 1000L && data.isNotEmpty()) return data
+        }
+        // Signed in: your personal YouTube Music home (Quick picks, Listen again, Mixed for you…)
+        if (com.sonora.music.AppGraph.account.state.value != null) {
+            val personal = runCatching { withContext(Dispatchers.IO) { com.sonora.music.AppGraph.ytMusic.home() } }
+                .getOrNull()
+                .orEmpty()
+            if (personal.isNotEmpty()) {
+                homeCache = System.currentTimeMillis() to personal
+                return personal
+            }
         }
         val year = Calendar.getInstance().get(Calendar.YEAR)
         val cambodia = TimeZone.getDefault().id == "Asia/Phnom_Penh" || Locale.getDefault().country == "KH"

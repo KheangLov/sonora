@@ -6,6 +6,8 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.room.Room
 import com.sonora.music.data.LibraryRepository
+import com.sonora.music.data.account.AccountStore
+import com.sonora.music.data.youtube.YtMusicApi
 import com.sonora.music.data.db.AppDatabase
 import com.sonora.music.data.youtube.NewPipeDownloader
 import com.sonora.music.data.youtube.StreamHeadersInterceptor
@@ -42,6 +44,8 @@ object AppGraph {
     }
 
     val youtube: YouTubeRepository by lazy { YouTubeRepository() }
+    val account: AccountStore by lazy { AccountStore(app) }
+    val ytMusic: YtMusicApi by lazy { YtMusicApi(okHttp, account) }
     val library: LibraryRepository by lazy { LibraryRepository(db) }
 
     /** Streamed audio is cached on disk, so replays are instant and work offline. */

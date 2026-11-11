@@ -1,6 +1,10 @@
 package com.sonora.music.ui
 
 import android.Manifest
+import android.net.Uri
+import com.sonora.music.data.youtube.YtCollection
+import com.sonora.music.ui.account.LoginScreen
+import com.sonora.music.ui.library.RemoteCollectionScreen
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
@@ -133,7 +137,11 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
                 popExitTransition = { fadeOut(tween(160)) },
             ) {
                 composable("home") {
-                    HomeScreen(bottom, onOpenCollection = { nav.navigate("collection/$it") })
+                    HomeScreen(
+                        bottom,
+                        onOpenCollection = { nav.navigate("collection/$it") },
+                        onOpenRemote = { nav.openRemote(it) },
+                    )
                 }
                 composable("search") { SearchScreen(bottom) }
                 composable("library") {
@@ -141,7 +149,28 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
                         bottom,
                         onOpenCollection = { nav.navigate("collection/$it") },
                         onOpenPlaylist = { nav.navigate("collection/playlist?id=$it") },
+                        onSignIn = { nav.navigate("login") },
+                        onOpenRemote = { nav.openRemote(it) },
                     )
+                }
+                composable("login") {
+                    LoginScreen(bottom, onDone = { nav.popBackStack() })
+                }
+                composable(
+                    "remote?id={id}&q={q}&t={t}&s={s}&th={th}",
+                    arguments = listOf("id", "q", "t", "s", "th").map { name ->
+                        navArgument(name) { type = NavType.StringType; defaultValue = "" }
+                    },
+                ) { entry ->
+                    val a = entry.arguments
+                    val collection = YtCollection(
+                        id = a?.getString("id").orEmpty(),
+                        isQueue = a?.getString("q") == "1",
+                        title = a?.getString("t").orEmpty(),
+                        subtitle = a?.getString("s").orEmpty(),
+                        thumbnail = a?.getString("th").orEmpty(),
+                    )
+                    RemoteCollectionScreen(collection, bottom, onBack = { nav.popBackStack() })
                 }
                 composable(
                     "collection/{kind}?id={id}",
@@ -168,6 +197,11 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
             NowPlayingScreen(onCollapse = { expanded = false })
         }
     }
+}
+
+private fun NavHostController.openRemote(c: YtCollection) {
+    fun e(v: String) = Uri.encode(v)
+    navigate("remote?id=${e(c.id)}&q=${if (c.isQueue) "1" else "0"}&t=${e(c.title)}&s=${e(c.subtitle)}&th=${e(c.thumbnail)}")
 }
 
 @Composable

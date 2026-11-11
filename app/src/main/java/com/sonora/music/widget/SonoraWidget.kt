@@ -11,11 +11,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
-import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.layout.RowScope
+import androidx.glance.layout.fillMaxHeight
+import androidx.glance.layout.fillMaxWidth
+import androidx.glance.Image
+import androidx.glance.LocalSize
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.layout.RowScope
+import androidx.glance.layout.fillMaxHeight
+import androidx.glance.layout.fillMaxWidthProvider
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
@@ -63,6 +74,9 @@ private val KEY_ARTIST = stringPreferencesKey("artist")
 private val KEY_ART = stringPreferencesKey("art")
 private val KEY_SONG = stringPreferencesKey("song")
 private val KEY_PLAYING = booleanPreferencesKey("playing")
+private val KEY_LIKED = booleanPreferencesKey("liked")
+private val KEY_SHUFFLE = booleanPreferencesKey("shuffle")
+private val KEY_REPEAT = intPreferencesKey("repeat")
 private val CMD = ActionParameters.Key<String>("cmd")
 
 private val Lime = Color(0xFFC6F432)
@@ -71,6 +85,8 @@ private val Lime = Color(0xFFC6F432)
 class SonoraWidget : GlanceAppWidget() {
 
     override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
+
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent { WidgetContent(context) }
@@ -82,7 +98,15 @@ class SonoraWidget : GlanceAppWidget() {
         val title = prefs[KEY_TITLE] ?: "Sonora"
         val artist = prefs[KEY_ARTIST] ?: "Tap to start listening"
         val playing = prefs[KEY_PLAYING] ?: false
+        val liked = prefs[KEY_LIKED] ?: false
+        val shuffle = prefs[KEY_SHUFFLE] ?: false
+        val repeat = prefs[KEY_REPEAT] ?: 0
         val art: Bitmap? = prefs[KEY_ART]?.let { path -> runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
+
+        val size = LocalSize.current
+        val tall = size.height >= 150.dp
+        val wide = size.width >= 300.dp
+        val artSize = if (tall) minOf(size.height - 24.dp, size.width * 0.42f) else minOf(size.height - 20.dp, 104.dp)
 
         val open = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_OPEN_PLAYER, prefs[KEY_SONG] != null)
@@ -91,7 +115,7 @@ class SonoraWidget : GlanceAppWidget() {
         Row(
             GlanceModifier
                 .fillMaxSize()
-                .cornerRadius(24.dp)
+                .cornerRadius(28.dp)
                 .background(Color(0xFF141418))
                 .padding(10.dp)
                 .clickable(actionStartActivity(open)),
@@ -101,43 +125,65 @@ class SonoraWidget : GlanceAppWidget() {
                 provider = art?.let { ImageProvider(it) } ?: ImageProvider(R.drawable.widget_art_placeholder),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = GlanceModifier.size(64.dp).cornerRadius(14.dp),
+                modifier = GlanceModifier.size(artSize).cornerRadius(20.dp),
             )
             Spacer(GlanceModifier.width(12.dp))
-            Column(GlanceModifier.defaultWeight()) {
+            Column(GlanceModifier.defaultWeight().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     title,
-                    maxLines = 1,
-                    style = TextStyle(color = ColorProvider(Color.White), fontSize = 15.sp, fontWeight = FontWeight.Bold),
+                    maxLines = if (tall) 2 else 1,
+                    style = TextStyle(color = ColorProvider(Color.White), fontSize = if (tall) 17.sp else 15.sp, fontWeight = FontWeight.Bold),
                 )
                 Text(
                     artist,
                     maxLines = 1,
                     style = TextStyle(color = ColorProvider(Color(0xFFA1A1AA)), fontSize = 13.sp),
                 )
-                Spacer(GlanceModifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ControlIcon(R.drawable.ic_w_prev, "Previous", "prev")
-                    Spacer(GlanceModifier.width(14.dp))
-                    Box(
-                        GlanceModifier
-                            .size(38.dp)
-                            .cornerRadius(19.dp)
-                            .background(Lime)
-                            .clickable(actionRunCallback<WidgetAction>(actionParametersOf(CMD to "toggle"))),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Image(
-                            ImageProvider(if (playing) R.drawable.ic_w_pause else R.drawable.ic_w_play),
-                            contentDescription = if (playing) "Pause" else "Play",
-                            modifier = GlanceModifier.size(22.dp),
-                        )
+                Spacer(GlanceModifier.defaultWeight())
+                // Controls spread across the full width
+                Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Slot { ControlIcon(if (shuffle) R.drawable.ic_w_shuffle_on else R.drawable.ic_w_shuffle, "Shuffle", "shuffle") }
+                    Slot { ControlIcon(R.drawable.ic_w_prev, "Previous", "prev") }
+                    Slot {
+                        Box(
+                            GlanceModifier
+                                .size(if (tall) 48.dp else 42.dp)
+                                .cornerRadius(24.dp)
+                                .background(Lime)
+                                .clickable(actionRunCallback<WidgetAction>(actionParametersOf(CMD to "toggle"))),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Image(
+                                ImageProvider(if (playing) R.drawable.ic_w_pause else R.drawable.ic_w_play),
+                                contentDescription = if (playing) "Pause" else "Play",
+                                modifier = GlanceModifier.size(24.dp),
+                            )
+                        }
                     }
-                    Spacer(GlanceModifier.width(14.dp))
-                    ControlIcon(R.drawable.ic_w_next, "Next", "next")
+                    Slot { ControlIcon(R.drawable.ic_w_next, "Next", "next") }
+                    Slot { ControlIcon(if (liked) R.drawable.ic_w_heart_on else R.drawable.ic_w_heart, if (liked) "Unlike" else "Like", "like") }
+                    if (wide) {
+                        Slot {
+                            ControlIcon(
+                                when (repeat) {
+                                    1 -> R.drawable.ic_w_repeat_one_on
+                                    2 -> R.drawable.ic_w_repeat_on
+                                    else -> R.drawable.ic_w_repeat
+                                },
+                                "Repeat",
+                                "repeat",
+                            )
+                        }
+                    }
                 }
+                Spacer(GlanceModifier.defaultWeight())
             }
         }
+    }
+
+    @Composable
+    private fun RowScope.Slot(content: @Composable () -> Unit) {
+        Box(GlanceModifier.defaultWeight(), contentAlignment = Alignment.Center) { content() }
     }
 
     @Composable
@@ -146,8 +192,9 @@ class SonoraWidget : GlanceAppWidget() {
             ImageProvider(res),
             contentDescription = label,
             modifier = GlanceModifier
-                .size(30.dp)
-                .padding(3.dp)
+                .size(36.dp)
+                .padding(6.dp)
+                .cornerRadius(18.dp)
                 .clickable(actionRunCallback<WidgetAction>(actionParametersOf(CMD to cmd))),
         )
     }
@@ -167,6 +214,9 @@ class WidgetAction : ActionCallback {
                 "toggle" -> player.togglePlay()
                 "next" -> player.next()
                 "prev" -> player.previous()
+                "shuffle" -> player.toggleShuffle()
+                "repeat" -> player.cycleRepeat()
+                "like" -> player.toggleLikeCurrent()
             }
         }
     }
@@ -175,7 +225,9 @@ class WidgetAction : ActionCallback {
 object WidgetUpdater {
     @Volatile private var artFor: String? = null
 
-    suspend fun update(context: Context, song: Song?, playing: Boolean) {
+    data class Extras(val liked: Boolean = false, val shuffle: Boolean = false, val repeat: Int = 0)
+
+    suspend fun update(context: Context, song: Song?, playing: Boolean, extras: Extras = Extras()) {
         val manager = GlanceAppWidgetManager(context)
         val ids = manager.getGlanceIds(SonoraWidget::class.java)
         if (ids.isEmpty()) return
@@ -206,6 +258,9 @@ object WidgetUpdater {
                     if (artFor == song.id) prefs[KEY_ART] = artFile.absolutePath else prefs.remove(KEY_ART)
                 }
                 prefs[KEY_PLAYING] = playing
+                prefs[KEY_LIKED] = extras.liked
+                prefs[KEY_SHUFFLE] = extras.shuffle
+                prefs[KEY_REPEAT] = extras.repeat
             }
             widget.update(context, id)
         }

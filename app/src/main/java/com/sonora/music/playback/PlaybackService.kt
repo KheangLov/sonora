@@ -95,6 +95,15 @@ class PlaybackService : MediaSessionService() {
                     )
                 ) {
                     QueueStore.save(this@PlaybackService, player)
+                }
+                if (events.containsAny(
+                        Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_TIMELINE_CHANGED,
+                        Player.EVENT_IS_PLAYING_CHANGED,
+                        Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                        Player.EVENT_REPEAT_MODE_CHANGED,
+                    )
+                ) {
                     refreshWidget(player)
                 }
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED)) {
@@ -192,15 +201,29 @@ class PlaybackService : MediaSessionService() {
             AppGraph.db.songDao().observe(id)
                 .map { it?.liked == true }
                 .distinctUntilChanged()
-                .collect { liked -> session?.setCustomLayout(listOf(likeButton(liked))) }
+                .collect { liked ->
+                    session?.setCustomLayout(listOf(likeButton(liked)))
+                    session?.player?.let(::refreshWidget)
+                }
         }
     }
 
     private fun refreshWidget(player: Player) {
         val song = player.currentMediaItem?.toSong()
         val playing = player.isPlaying
+        val shuffle = player.shuffleModeEnabled
+        val repeat = when (player.repeatMode) {
+            Player.REPEAT_MODE_ONE -> 1
+            Player.REPEAT_MODE_ALL -> 2
+            else -> 0
+        }
         val context = applicationContext
-        AppGraph.scope.launch { runCatching { WidgetUpdater.update(context, song, playing) } }
+        AppGraph.scope.launch {
+            runCatching {
+                val liked = song?.let { AppGraph.db.songDao().get(it.id)?.liked } == true
+                WidgetUpdater.update(context, song, playing, WidgetUpdater.Extras(liked, shuffle, repeat))
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -224,7 +247,7 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private companion object {
+    companion object {
         const val ACTION_LIKE = "sonora.LIKE"
     }
 }

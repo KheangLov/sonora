@@ -177,7 +177,7 @@ fun CollectionScreen(
 }
 
 @Composable
-private fun CollectionHeader(
+internal fun CollectionHeader(
     title: String,
     subtitle: String,
     icon: ImageVector,

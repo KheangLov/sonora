@@ -19,6 +19,7 @@ data class HomeSection(
     val title: String,
     val subtitle: String?,
     val songs: List<Song>,
+    val collections: List<com.sonora.music.data.youtube.YtCollection> = emptyList(),
 )
 
 fun formatDuration(ms: Long): String {

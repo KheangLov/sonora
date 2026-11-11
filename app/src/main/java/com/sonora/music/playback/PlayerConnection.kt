@@ -12,6 +12,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.media3.session.SessionCommand
+import android.os.Bundle
 import com.sonora.music.AppGraph
 import com.sonora.music.data.model.Song
 import kotlinx.coroutines.Job
@@ -192,6 +194,11 @@ class PlayerConnection(private val context: Context) {
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
+    }
+
+    /** Routed through the session so it also works from the widget when the UI isn't open. */
+    fun toggleLikeCurrent() = withController {
+        it.sendCustomCommand(SessionCommand(PlaybackService.ACTION_LIKE, Bundle.EMPTY), Bundle.EMPTY)
     }
 
     fun position(): Long = controller?.currentPosition ?: 0L
