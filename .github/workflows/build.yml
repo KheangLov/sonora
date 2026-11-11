@@ -1,0 +1,52 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        id: build
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Sonora-release-apk
+          path: app/build/outputs/apk/release/*.apk
+
+      # Publish result to a branch (APK on success, log on failure)
+      - name: Publish result branch
+        if: always()
+        run: |
+          mkdir -p /tmp/out
+          cp build.log /tmp/out/ 2>/dev/null || true
+          cp app/build/outputs/apk/release/*.apk /tmp/out/Sonora.apk 2>/dev/null || true
+          echo "${{ job.status }} ${{ github.sha }}" > /tmp/out/STATUS
+          cd /tmp/out
+          git init -q
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout -q -b build-output
+          git add -A
+          git commit -q -m "Build output for ${{ github.sha }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" build-output
