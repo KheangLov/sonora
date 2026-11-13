@@ -6,6 +6,8 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.room.Room
 import com.sonora.music.data.LibraryRepository
+import com.sonora.music.data.filter.ContentFilter
+import com.sonora.music.data.lyrics.LyricsRepository
 import com.sonora.music.data.account.AccountStore
 import com.sonora.music.data.youtube.YtMusicApi
 import com.sonora.music.data.db.AppDatabase
@@ -39,6 +41,7 @@ object AppGraph {
 
     val db: AppDatabase by lazy {
         Room.databaseBuilder(app, AppDatabase::class.java, "sonora.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -47,6 +50,7 @@ object AppGraph {
     val account: AccountStore by lazy { AccountStore(app) }
     val ytMusic: YtMusicApi by lazy { YtMusicApi(okHttp, account) }
     val library: LibraryRepository by lazy { LibraryRepository(db) }
+    val lyrics: LyricsRepository by lazy { LyricsRepository(okHttp, db.lyricsDao()) }
 
     /** Streamed audio is cached on disk, so replays are instant and work offline. */
     val playerCache: SimpleCache by lazy {
@@ -62,5 +66,6 @@ object AppGraph {
     fun init(application: Application) {
         app = application
         NewPipe.init(NewPipeDownloader(okHttp))
+        ContentFilter.start(scope, db.songDao().observeDislikedIds())
     }
 }

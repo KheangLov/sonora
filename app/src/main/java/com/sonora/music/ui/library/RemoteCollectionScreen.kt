@@ -26,6 +26,7 @@ import com.sonora.music.ui.components.EmptyState
 import com.sonora.music.ui.components.SkeletonRow
 import com.sonora.music.ui.components.SongActionsSheet
 import com.sonora.music.ui.components.SongRow
+import com.sonora.music.ui.components.rememberVisibleSongs
 import com.sonora.music.ui.components.toast
 import com.sonora.music.ui.player.rememberArtworkColor
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +48,7 @@ fun RemoteCollectionScreen(collection: YtCollection, bottomPadding: Dp, onBack: 
             .getOrElse { emptyList() }
     }
     val accent by rememberArtworkColor(collection.thumbnail.ifBlank { null }, Color(0xFF5B3FFF))
-    val list = songs.orEmpty()
+    val list = rememberVisibleSongs(songs.orEmpty())
     val totalMs = list.sumOf { it.durationSec } * 1000
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomPadding + 16.dp)) {

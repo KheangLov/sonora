@@ -1,5 +1,6 @@
 package com.sonora.music.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
@@ -30,6 +31,8 @@ data class SongEntity(
     val downloadProgress: Int = 0,
     val localPath: String? = null,
     val downloadedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val disliked: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val dislikedAt: Long = 0,
 )
 
 fun SongEntity.toSong() = Song(id, title, artist, thumbnail, durationSec)
@@ -63,4 +66,15 @@ data class PlaylistWithCount(
     @Embedded val playlist: PlaylistEntity,
     val songCount: Int,
     val cover: String?,
+)
+
+/** Cached lyrics so they show instantly next time, and offline for downloaded songs. */
+@Entity(tableName = "lyrics")
+data class LyricsEntity(
+    @PrimaryKey val id: String,
+    /** LRC text with [mm:ss.xx] timestamps, if a time-synced version exists. */
+    val synced: String?,
+    val plain: String?,
+    val source: String,
+    val fetchedAt: Long,
 )

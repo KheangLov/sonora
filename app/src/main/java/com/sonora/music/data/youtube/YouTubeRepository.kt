@@ -1,6 +1,7 @@
 package com.sonora.music.data.youtube
 
 import android.net.Uri
+import com.sonora.music.data.filter.ContentFilter
 import com.sonora.music.data.model.HomeSection
 import com.sonora.music.data.model.Song
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,8 @@ class YouTubeRepository {
         val correctedTo: String?,
         /** YouTube suggests a better spelling: "Did you mean …?" */
         val didYouMean: String?,
+        /** The query itself is on the block list (Thai content). */
+        val blocked: Boolean = false,
     )
 
     suspend fun search(query: String): List<Song> = startSearch(query).songs
@@ -73,6 +76,9 @@ class YouTubeRepository {
             yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), ""),
             yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.VIDEOS), ""),
         )
+        if (ContentFilter.blocksQuery(query)) {
+            return@withContext SearchResult(session, emptyList(), correctedTo = null, didYouMean = null, blocked = true)
+        }
         val (songsInfo, videosInfo) = coroutineScope {
             val s = async { runCatching { SearchInfo.getInfo(yt, session.songsHandler) }.getOrNull() }
             val v = async { runCatching { SearchInfo.getInfo(yt, session.videosHandler) }.getOrNull() }
@@ -89,7 +95,8 @@ class YouTubeRepository {
         )
 
         val info = videosInfo ?: songsInfo
-        val suggestion = info?.searchSuggestion?.takeIf { it.isNotBlank() && !it.equals(query, ignoreCase = true) }
+        val suggestion = info?.searchSuggestion
+            ?.takeIf { it.isNotBlank() && !it.equals(query, ignoreCase = true) && !ContentFilter.blocksQuery(it) }
         SearchResult(
             session = session,
             songs = songs,
@@ -135,6 +142,7 @@ class YouTubeRepository {
             .filter { it.first > SearchRanker.MIN_SCORE }
             .sortedByDescending { it.first }
             .mapNotNull { (_, item) -> item.toSongOrNull() }
+            .filterNot(ContentFilter::blocks)
             .filter { song ->
                 // Drop exact repeats and the same track re-uploaded under the same title/artist.
                 session.seenIds.add(song.id) && session.seenKeys.add(SearchRanker.dedupeKey(song))
@@ -142,7 +150,8 @@ class YouTubeRepository {
     }
 
     suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
-        yt.suggestionExtractor.suggestionList(query).take(8)
+        if (ContentFilter.blocksQuery(query)) return@withContext emptyList()
+        yt.suggestionExtractor.suggestionList(query).filterNot(ContentFilter::blocksQuery).take(8)
     }
 
     // ---------------------------------------------------------------- streams
@@ -188,10 +197,11 @@ class YouTubeRepository {
 
     /** "Radio" — songs YouTube considers related. Powers autoplay. */
     suspend fun related(id: String): List<Song> = withContext(Dispatchers.IO) {
-        relatedCache[id] ?: run {
+        val list = relatedCache[id] ?: run {
             resolveAudio(id)
             relatedCache[id].orEmpty()
         }
+        ContentFilter.filterSongs(list)
     }
 
     // ---------------------------------------------------------------- home feed
@@ -211,6 +221,7 @@ class YouTubeRepository {
             val personal = runCatching { withContext(Dispatchers.IO) { com.sonora.music.AppGraph.ytMusic.home() } }
                 .getOrNull()
                 .orEmpty()
+                .let(ContentFilter::filterSections)
             if (personal.isNotEmpty()) {
                 homeCache = System.currentTimeMillis() to personal
                 return personal

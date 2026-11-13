@@ -23,6 +23,8 @@ import androidx.compose.material.icons.rounded.QueuePlayNext
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbDownOffAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -84,6 +86,21 @@ fun SongActionsSheet(
             tint = if (liked) MaterialTheme.colorScheme.primary else null,
         ) {
             AppGraph.scope.launch { AppGraph.library.setLiked(song, !liked) }
+            onDismiss()
+        }
+        val disliked = entity?.disliked == true
+        SheetAction(
+            if (disliked) Icons.Rounded.ThumbDown else Icons.Rounded.ThumbDownOffAlt,
+            if (disliked) "Remove dislike" else "Dislike — hide this song",
+            tint = if (disliked) MaterialTheme.colorScheme.error else null,
+        ) {
+            if (disliked) {
+                conn.undislike(song)
+                context.toast("Song is back")
+            } else {
+                conn.dislike(song)
+                context.toast("Hidden. Undo it in Library → Disliked songs")
+            }
             onDismiss()
         }
         val state = entity?.downloadState ?: DL_NONE
