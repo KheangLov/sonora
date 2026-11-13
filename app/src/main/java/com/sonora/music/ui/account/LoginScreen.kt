@@ -8,6 +8,7 @@ import android.os.Message
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -23,16 +24,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.sonora.music.AppGraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val MUSIC_HOME = "https://music.youtube.com/"
-
-/** Desktop Chrome: Google and YouTube never try to hand off to the YouTube app from a desktop page. */
-private const val DESKTOP_UA =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 private const val LOGIN_URL =
     "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&passive=true" +
@@ -46,8 +45,6 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var finished by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
-    // Desktop mode is the default: it's the most reliable way to keep the YouTube app from hijacking sign-in.
-    var desktopMode by remember { mutableStateOf(true) }
     var webView by remember { mutableStateOf<WebView?>(null) }
 
     fun onSignedIn(cookie: String) {
@@ -88,13 +85,10 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // Start over with a clean session if Google shows an error page.
             TextButton(onClick = {
-                desktopMode = !desktopMode
-                webView?.let { wv ->
-                    wv.settings.userAgentString = userAgentFor(wv, desktopMode)
-                    wv.loadUrl(LOGIN_URL)
-                }
-            }) { Text(if (desktopMode) "Mobile view" else "Desktop view") }
+                CookieManager.getInstance().removeAllCookies { webView?.loadUrl(LOGIN_URL) }
+            }) { Text("Restart") }
         }
         if (loading) {
             LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary)
@@ -112,12 +106,13 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
                     // Pop-ups / "open in new window" would otherwise escape to another app.
                     settings.setSupportMultipleWindows(false)
                     settings.javaScriptCanOpenWindowsAutomatically = false
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-                    // Google refuses sign-in from "embedded" browsers; present as a regular browser.
-                    settings.userAgentString = userAgentFor(this, desktopMode)
+                    // Google refuses sign-in from "embedded" browsers ("This browser or app may not be secure").
+                    // Look like the phone's real Chrome: same engine + version, without the WebView "; wv" marker…
+                    settings.userAgentString = WebSettings.getDefaultUserAgent(ctx).replace("; wv", "")
+                    // …and don't announce the app's package name in the X-Requested-With header.
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                        WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+                    }
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?) = false
@@ -189,7 +184,3 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
         )
     }
 }
-
-private fun userAgentFor(view: WebView, desktop: Boolean): String =
-    if (desktop) DESKTOP_UA
-    else android.webkit.WebSettings.getDefaultUserAgent(view.context).replace("; wv", "")
