@@ -32,6 +32,11 @@ class LibraryRepository(db: AppDatabase) {
         songs.setLiked(song.id, liked, now())
     }
 
+    suspend fun setDisliked(song: Song, disliked: Boolean) {
+        ensure(song)
+        songs.setDisliked(song.id, disliked, now())
+    }
+
     suspend fun createPlaylist(name: String): Long =
         playlists.insert(PlaylistEntity(name = name, createdAt = now()))
 

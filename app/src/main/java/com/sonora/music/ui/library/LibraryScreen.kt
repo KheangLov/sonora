@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -47,6 +48,7 @@ val LikedGradient = listOf(Color(0xFF5B3FFF), Color(0xFF9D8CFF))
 val DownloadsGradient = listOf(Color(0xFF5D7A00), Color(0xFFC6F432))
 val HistoryGradient = listOf(Color(0xFFB4410E), Color(0xFFFF9A5A))
 val YouTubeGradient = listOf(Color(0xFF9B0F0F), Color(0xFFFF4E45))
+val DislikedGradient = listOf(Color(0xFF3A3A44), Color(0xFF7A7A88))
 
 @Composable
 private fun ConnectYouTubeCard(onSignIn: () -> Unit) {
@@ -101,6 +103,7 @@ fun LibraryScreen(
     val playlists by remember { AppGraph.db.playlistDao().observeAll() }.collectAsStateWithLifecycle(emptyList())
     val likedCount by remember { songs.likedCount() }.collectAsStateWithLifecycle(0)
     val downloadCount by remember { songs.downloadCount() }.collectAsStateWithLifecycle(0)
+    val dislikedCount by remember { songs.dislikedCount() }.collectAsStateWithLifecycle(0)
     var creating by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<PlaylistWithCount?>(null) }
 
@@ -135,6 +138,11 @@ fun LibraryScreen(
         }
         item(key = "history") {
             LibraryTile("Recently played", "Your listening history", Icons.Rounded.History, HistoryGradient) { onOpenCollection("history") }
+        }
+        item(key = "disliked") {
+            LibraryTile("Disliked songs", "$dislikedCount hidden • tap to undo", Icons.Rounded.ThumbDown, DislikedGradient) {
+                onOpenCollection("disliked")
+            }
         }
         if (account != null) {
             item(key = "yt_header") {

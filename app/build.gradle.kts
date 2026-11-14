@@ -79,6 +79,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation("androidx.webkit:webkit:1.12.1")
 
     // Home screen widget
     implementation("androidx.glance:glance-appwidget:1.1.1")

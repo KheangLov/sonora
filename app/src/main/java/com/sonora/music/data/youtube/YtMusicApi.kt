@@ -2,6 +2,7 @@ package com.sonora.music.data.youtube
 
 import androidx.compose.runtime.Immutable
 import com.sonora.music.data.account.AccountStore
+import com.sonora.music.data.filter.ContentFilter
 import com.sonora.music.data.model.HomeSection
 import com.sonora.music.data.model.Song
 import okhttp3.MediaType.Companion.toMediaType
@@ -43,7 +44,7 @@ class YtMusicApi(private val client: OkHttpClient, private val account: AccountS
             response = postContinuation(token)
             sections += parseShelves(response)
         }
-        return sections.filter { it.songs.isNotEmpty() || it.collections.isNotEmpty() }
+        return ContentFilter.filterSections(sections)
     }
 
     fun likedMusic(): YtCollection = YtCollection("VLLM", false, "Liked music", "From your YouTube account", "")
@@ -54,6 +55,7 @@ class YtMusicApi(private val client: OkHttpClient, private val account: AccountS
             .mapNotNull { (key, obj) -> if (key == "musicTwoRowItemRenderer") parseTwoRow(obj) else parseResponsive(obj) }
             .filterIsInstance<YtCollection>()
             .filter { it.id.startsWith("VL") && it.id != "VLLM" }
+            .filterNot(ContentFilter::blocks)
             .distinctBy { it.id }
     }
 
@@ -90,7 +92,19 @@ class YtMusicApi(private val client: OkHttpClient, private val account: AccountS
                 thumbnail = s.thumbnail.ifBlank { collection.thumbnail },
                 artist = s.artist.ifBlank { fallbackArtist },
             )
-        }
+        }.filterNot(ContentFilter::blocks)
+    }
+
+    /** Plain lyrics from YouTube Music's "Lyrics" tab, if the song has one. Works signed out too. */
+    fun lyrics(videoId: String): String? {
+        val next = post("next", JSONObject().put("videoId", videoId).put("isAudioOnly", true))
+        val browseId = findAllOf(next, setOf("browseEndpoint"))
+            .map { it.second.optString("browseId") }
+            .firstOrNull { it.startsWith("MPLY") }
+            ?: return null
+        val page = post("browse", JSONObject().put("browseId", browseId))
+        val shelf = findFirstOf(page, setOf("musicDescriptionShelfRenderer")) ?: return null
+        return text(shelf.optJSONObject("description")).ifBlank { null }
     }
 
     /** Returns (name, photoUrl) of the signed-in account. */

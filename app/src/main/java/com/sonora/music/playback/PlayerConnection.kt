@@ -15,6 +15,7 @@ import androidx.media3.session.SessionToken
 import androidx.media3.session.SessionCommand
 import android.os.Bundle
 import com.sonora.music.AppGraph
+import com.sonora.music.data.filter.ContentFilter
 import com.sonora.music.data.model.Song
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -93,6 +94,12 @@ class PlayerConnection(private val context: Context) {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             errorStreak = 0
+            // Never play a song you disliked, even if it was already sitting in the queue.
+            val c = controller
+            if (c != null && mediaItem != null && ContentFilter.isDisliked(mediaItem.mediaId) && c.hasNextMediaItem()) {
+                c.seekToNextMediaItem()
+                return
+            }
             maybeExtendQueue()
         }
 
@@ -179,6 +186,24 @@ class PlayerConnection(private val context: Context) {
         }
     }
 
+    /** Hide this song everywhere, drop it from the queue and skip it if it's playing. */
+    fun dislike(song: Song) {
+        AppGraph.scope.launch { AppGraph.library.setDisliked(song, true) }
+        withController { c ->
+            val currentIndex = c.currentMediaItemIndex
+            for (i in c.mediaItemCount - 1 downTo 0) {
+                if (i != currentIndex && c.getMediaItemAt(i).mediaId == song.id) c.removeMediaItem(i)
+            }
+            if (c.currentMediaItem?.mediaId == song.id) {
+                if (c.hasNextMediaItem()) c.seekToNextMediaItem() else c.pause()
+            }
+        }
+    }
+
+    fun undislike(song: Song) {
+        AppGraph.scope.launch { AppGraph.library.setDisliked(song, false) }
+    }
+
     fun next() = withController { it.seekToNext() }
     fun previous() = withController { it.seekToPrevious() }
     fun seekTo(positionMs: Long) = withController { it.seekTo(positionMs) }
@@ -226,7 +251,7 @@ class PlayerConnection(private val context: Context) {
     private fun appendUnique(c: MediaController, songs: List<Song>) {
         val existing = HashSet<String>()
         for (i in 0 until c.mediaItemCount) existing += c.getMediaItemAt(i).mediaId
-        val toAdd = songs.filter { existing.add(it.id) }
+        val toAdd = songs.filter { !ContentFilter.blocks(it) && existing.add(it.id) }
         if (toAdd.isNotEmpty()) c.addMediaItems(toAdd.map { it.toMediaItem() })
     }
 

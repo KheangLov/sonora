@@ -16,6 +16,8 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
+import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,6 +69,7 @@ fun CollectionScreen(
             "liked" -> dao.observeLiked()
             "downloads" -> dao.observeDownloads()
             "history" -> dao.observeHistory(300)
+            "disliked" -> dao.observeDisliked()
             else -> playlistDao.observeSongs(playlistId)
         }
     }
@@ -80,13 +83,19 @@ fun CollectionScreen(
     val songs = remember(entities) { entities.map { it.toSong() } }
     // Only finished downloads are playable in the Downloads list
     val playable = remember(entities, kind) {
-        if (kind == "downloads") entities.filter { it.isDownloaded }.map { it.toSong() } else songs
+        when (kind) {
+            "downloads" -> entities.filter { it.isDownloaded && !it.disliked }.map { it.toSong() }
+            "disliked" -> emptyList()
+            else -> songs
+        }
     }
+    var confirmRestoreAll by remember { mutableStateOf(false) }
 
     val (title, icon, gradient) = when (kind) {
         "liked" -> Triple("Liked Songs", Icons.Rounded.Favorite, LikedGradient)
         "downloads" -> Triple("Downloads", Icons.Rounded.DownloadForOffline, DownloadsGradient)
         "history" -> Triple("Recently played", Icons.Rounded.History, HistoryGradient)
+        "disliked" -> Triple("Disliked songs", Icons.Rounded.ThumbDown, DislikedGradient)
         else -> Triple(playlist?.name ?: "Playlist", Icons.Rounded.LibraryMusic, listOf(Color(0xFF2B2B33), Color(0xFF4A4A57)))
     }
     val totalMs = songs.sumOf { it.durationSec } * 1000
@@ -112,6 +121,9 @@ fun CollectionScreen(
                             Icon(Icons.Rounded.DeleteSweep, "Clear history")
                         }
                         "downloads" -> Unit
+                        "disliked" -> IconButton(onClick = { confirmRestoreAll = true }, enabled = songs.isNotEmpty()) {
+                            Icon(Icons.Rounded.SettingsBackupRestore, "Restore all")
+                        }
                         else -> IconButton(
                             onClick = {
                                 Downloads.downloadAll(context, songs)
@@ -132,10 +144,12 @@ fun CollectionScreen(
                         "liked" -> "Songs you like appear here"
                         "downloads" -> "No downloads yet"
                         "history" -> "Nothing played yet"
+                        "disliked" -> "No disliked songs"
                         else -> "This playlist is empty"
                     },
                     message = when (kind) {
                         "downloads" -> "Tap the download icon on any song to keep it for offline listening."
+                        "disliked" -> "Songs you dislike are hidden everywhere and listed here, so you can bring them back."
                         else -> "Long-press any song for more options."
                     },
                 )
@@ -150,7 +164,18 @@ fun CollectionScreen(
                 DL_FAILED -> if (kind == "downloads") "Download failed — tap ⋮ to retry" else null
                 else -> null
             }
-            SongRow(
+            if (kind == "disliked") {
+                SongRow(
+                    song,
+                    onClick = { context.toast("Tap Undo to bring this song back") },
+                    trailing = {
+                        TextButton(onClick = {
+                            conn.undislike(song)
+                            context.toast("Song is back")
+                        }) { Text("Undo") }
+                    },
+                )
+            } else SongRow(
                 song,
                 onClick = {
                     val index = playable.indexOfFirst { it.id == e.id }
@@ -163,6 +188,22 @@ fun CollectionScreen(
                 onMore = { menuSong = song },
             )
         }
+    }
+
+    if (confirmRestoreAll) {
+        AlertDialog(
+            onDismissRequest = { confirmRestoreAll = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Restore all ${songs.size} songs?") },
+            text = { Text("They'll show up again in search, home and radio.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppGraph.scope.launch { dao.clearDisliked() }
+                    confirmRestoreAll = false
+                }) { Text("Restore all") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRestoreAll = false }) { Text("Cancel") } },
+        )
     }
 
     menuSong?.let { s ->
