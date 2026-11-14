@@ -1,17 +1,22 @@
 package com.sonora.music.playback
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
@@ -23,6 +28,8 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.sonora.music.AppGraph
 import com.sonora.music.R
+import com.sonora.music.playback.fx.AudioFx
+import com.sonora.music.playback.fx.FxAudioProcessor
 import com.sonora.music.ui.MainActivity
 import com.sonora.music.widget.WidgetUpdater
 import kotlinx.coroutines.Job
@@ -58,7 +65,20 @@ class PlaybackService : MediaSessionService() {
             YtDataSource(FileDataSource(), remote.createDataSource())
         }
 
-        val player = ExoPlayer.Builder(this)
+        // Equalizer + effects run inside ExoPlayer's audio pipeline (see FxAudioProcessor).
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioProcessors(arrayOf(FxAudioProcessor()))
+                .build()
+        }
+
+        val player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -129,6 +149,13 @@ class PlaybackService : MediaSessionService() {
 
         observeLike(player.currentMediaItem?.mediaId)
         refreshWidget(player)
+
+        // Tempo from the equalizer screen (pitch is preserved).
+        scope.launch {
+            AudioFx.settings.map { it.tempo }.distinctUntilChanged().collect { tempo ->
+                player.playbackParameters = PlaybackParameters(tempo)
+            }
+        }
     }
 
     private inner class SessionCallback : MediaSession.Callback {

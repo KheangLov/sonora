@@ -65,6 +65,7 @@ object AppGraph {
 
     fun init(application: Application) {
         app = application
+        com.sonora.music.playback.fx.AudioFx.init(application)
         NewPipe.init(NewPipeDownloader(okHttp))
         ContentFilter.start(scope, db.songDao().observeDislikedIds())
     }

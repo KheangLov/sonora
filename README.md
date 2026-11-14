@@ -15,6 +15,7 @@ A native Kotlin + Jetpack Compose music app. It works like Spotify, takes its ca
 - **Lyrics.** Time-synced lyrics (from LRCLIB) that follow the song: the current line is highlighted and you can tap any line to jump there. Falls back to YouTube Music's lyrics, and results are cached for offline use.
 - **Dislike.** Hide a song everywhere (search, home, radio, Liked, playlists). If it's playing, it's skipped. Library → Disliked songs lists everything you've hidden, and you can undo one or restore them all.
 - **Content filter.** Thai / Thailand content is blocked everywhere: Thai-script titles, Thai keywords, Thai labels and artists. It applies to search queries, suggestions, results, the home feed, radio/autoplay and YouTube Music lists. The rules live in `data/filter/ContentFilter.kt`.
+- **Poweramp-style equalizer.** 10-band graphic EQ (31 Hz–16 kHz, ±15 dB) with preamp, a live spectrum analyzer under the response curve, 16 built-in presets plus your own saved presets, bass & treble tone knobs and a peak limiter. An Effects tab adds balance, stereo expand, mono, tempo (pitch preserved) and a volume knob. It runs as Sonora's own DSP inside ExoPlayer, so it sounds the same on every phone and on speaker, wired or Bluetooth.
 
 **Offline**
 - **Download any song.** It is saved to private app storage and plays with no connection.
@@ -69,6 +70,7 @@ app/src/main/java/com/sonora/music/
 │   └── LibraryRepository.kt
 ├── playback/
 │   ├── PlaybackService.kt   # Media3 MediaSessionService + ExoPlayer
+│   ├── fx/                  # Equalizer + effects: settings/presets store, biquad DSP AudioProcessor
 │   ├── YtDataSource.kt      # yt://song/<id> → downloaded file → disk cache → YouTube
 │   └── PlayerConnection.kt  # MediaController wrapper exposing StateFlows to the UI
 └── ui/                      # Compose: home, search, library, collection, player
