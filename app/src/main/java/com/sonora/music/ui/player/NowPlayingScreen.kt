@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
@@ -70,6 +71,7 @@ import com.sonora.music.data.db.DL_RUNNING
 import com.sonora.music.data.download.Downloads
 import com.sonora.music.data.model.formatDuration
 import com.sonora.music.playback.PlayerState
+import com.sonora.music.playback.fx.AudioFx
 import com.sonora.music.ui.components.Artwork
 import com.sonora.music.ui.components.SongActionsSheet
 import com.sonora.music.ui.components.SongRow
@@ -80,11 +82,12 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
-fun NowPlayingScreen(onCollapse: () -> Unit) {
+fun NowPlayingScreen(onCollapse: () -> Unit, onOpenEqualizer: () -> Unit = {}) {
     val context = LocalContext.current
     val conn = AppGraph.player
     val state by conn.state.collectAsStateWithLifecycle()
     val sleepAt by conn.sleepAt.collectAsStateWithLifecycle()
+    val fx by AudioFx.settings.collectAsStateWithLifecycle()
     val song = state.current ?: return
 
     val entity by remember(song.id) { AppGraph.db.songDao().observe(song.id) }
@@ -306,6 +309,13 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                         Icons.Rounded.Bedtime,
                         "Sleep timer",
                         tint = if (sleepAt != null) MaterialTheme.colorScheme.primary else Color.White,
+                    )
+                }
+                IconButton(onClick = onOpenEqualizer) {
+                    Icon(
+                        Icons.Rounded.GraphicEq,
+                        "Equalizer",
+                        tint = if (AudioFx.isActive(fx)) MaterialTheme.colorScheme.primary else Color.White,
                     )
                 }
                 IconButton(onClick = { context.shareSong(song) }) { Icon(Icons.Rounded.Share, "Share") }

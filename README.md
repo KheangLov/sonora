@@ -12,6 +12,7 @@ A native Kotlin + Jetpack Compose music app. It works like Spotify, takes its ca
 - Background playback with a lock-screen and notification player. Works with Bluetooth, headset buttons and Android Auto via Media3 MediaSession.
 - Shuffle, repeat one/all, queue editing (jump to or remove a track), play next, add to queue
 - Sleep timer, sharing
+- **Poweramp-style equalizer.** 10-band graphic EQ (31 Hz–16 kHz, ±15 dB) with preamp, a live spectrum analyzer under the response curve, 16 built-in presets plus your own saved presets, bass & treble tone knobs and a peak limiter. An Effects tab adds balance, stereo expand, mono, tempo (pitch preserved) and a volume knob. It runs as Sonora's own DSP inside ExoPlayer, so it sounds the same on every phone and on speaker, wired or Bluetooth.
 
 **Offline**
 - **Download any song.** It is saved to private app storage and plays with no connection.
@@ -66,6 +67,7 @@ app/src/main/java/com/sonora/music/
 │   └── LibraryRepository.kt
 ├── playback/
 │   ├── PlaybackService.kt   # Media3 MediaSessionService + ExoPlayer
+│   ├── fx/                  # Equalizer + effects: settings/presets store, biquad DSP AudioProcessor
 │   ├── YtDataSource.kt      # yt://song/<id> → downloaded file → disk cache → YouTube
 │   └── PlayerConnection.kt  # MediaController wrapper exposing StateFlows to the UI
 └── ui/                      # Compose: home, search, library, collection, player

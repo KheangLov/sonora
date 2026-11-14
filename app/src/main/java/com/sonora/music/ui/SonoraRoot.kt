@@ -60,6 +60,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sonora.music.AppGraph
+import com.sonora.music.ui.equalizer.EqualizerScreen
 import com.sonora.music.ui.home.HomeScreen
 import com.sonora.music.ui.library.CollectionScreen
 import com.sonora.music.ui.library.LibraryScreen
@@ -82,6 +83,7 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
     val conn = AppGraph.player
     val state by conn.state.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf(false) }
+    var showEq by rememberSaveable { mutableStateOf(false) }
     val bg = MaterialTheme.colorScheme.background
 
     // Android 13+: media notification needs permission
@@ -101,6 +103,7 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
         }
     }
     BackHandler(enabled = expanded) { expanded = false }
+    BackHandler(enabled = showEq) { showEq = false }
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Scaffold(
@@ -194,7 +197,15 @@ fun SonoraRoot(openPlayerRequest: Boolean, onPlayerRequestHandled: () -> Unit) {
             enter = slideInVertically(tween(340, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
             exit = slideOutVertically(tween(280, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)),
         ) {
-            NowPlayingScreen(onCollapse = { expanded = false })
+            NowPlayingScreen(onCollapse = { expanded = false }, onOpenEqualizer = { showEq = true })
+        }
+
+        AnimatedVisibility(
+            visible = showEq,
+            enter = slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
+            exit = slideOutVertically(tween(260, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)),
+        ) {
+            EqualizerScreen(onClose = { showEq = false })
         }
     }
 }
