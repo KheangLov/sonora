@@ -34,6 +34,8 @@ import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.ThumbDownOffAlt
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -96,6 +98,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
     var showQueue by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
 
     // Drag down anywhere to dismiss
     val scope = rememberCoroutineScope()
@@ -301,6 +304,13 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                         context.toast("Downloading for offline")
                     }) { Icon(Icons.Rounded.Download, "Download") }
                 }
+                IconButton(onClick = {
+                    conn.dislike(song)
+                    context.toast("Disliked — won't play again. Undo in Library")
+                }) { Icon(Icons.Rounded.ThumbDownOffAlt, "Dislike") }
+                IconButton(onClick = { showLyrics = true }) {
+                    Icon(Icons.Rounded.Lyrics, "Lyrics", tint = if (showLyrics) MaterialTheme.colorScheme.primary else Color.White)
+                }
                 IconButton(onClick = { showSleep = true }) {
                     Icon(
                         Icons.Rounded.Bedtime,
@@ -316,6 +326,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
 
     if (showQueue) QueueSheet(state, onDismiss = { showQueue = false })
     if (showMenu) SongActionsSheet(song, onDismiss = { showMenu = false })
+    if (showLyrics) LyricsSheet(song, duration, state.isPlaying, accent, onDismiss = { showLyrics = false })
     if (showSleep) SleepTimerDialog(sleepAt, onDismiss = { showSleep = false })
 }
 

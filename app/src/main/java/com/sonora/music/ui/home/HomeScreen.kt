@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sonora.music.AppGraph
+import com.sonora.music.data.filter.ContentFilter
 import com.sonora.music.data.db.toSong
 import com.sonora.music.data.model.HomeSection
 import com.sonora.music.data.model.Song
@@ -129,6 +130,12 @@ fun HomeScreen(
     val moodSongs by vm.moodSongs.collectAsStateWithLifecycle()
     val player by AppGraph.player.state.collectAsStateWithLifecycle()
     val conn = AppGraph.player
+    // Hide disliked songs the moment you dislike them, without reloading the feed.
+    val disliked by ContentFilter.dislikedIds.collectAsStateWithLifecycle()
+    val visibleUi = remember(ui, disliked) {
+        (ui as? HomeUi.Content)?.let { HomeUi.Content(ContentFilter.filterSections(it.sections)) } ?: ui
+    }
+    val visibleMoodSongs = remember(moodSongs, disliked) { moodSongs?.let(ContentFilter::filterSongs) }
     var menuSong by remember { mutableStateOf<Song?>(null) }
 
     Box(Modifier.fillMaxSize()) {
@@ -150,7 +157,7 @@ fun HomeScreen(
                 val selectedMood = mood
                 if (selectedMood != null) {
                     item(key = "mood_title") { SectionHeader(selectedMood.label, "Mood") }
-                    val list = moodSongs
+                    val list = visibleMoodSongs
                     if (list == null) {
                         items(8) { SkeletonRow() }
                     } else if (list.isEmpty()) {
@@ -172,7 +179,7 @@ fun HomeScreen(
                             RecentGrid(recent, player, onPlay = conn::playRadio, onMore = { menuSong = it })
                         }
                     }
-                    when (val state = ui) {
+                    when (val state = visibleUi) {
                         HomeUi.Loading -> item(key = "skeleton") { HomeSkeleton() }
                         HomeUi.Error -> item(key = "error") {
                             EmptyState(

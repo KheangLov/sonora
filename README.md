@@ -12,6 +12,9 @@ A native Kotlin + Jetpack Compose music app. It works like Spotify, takes its ca
 - Background playback with a lock-screen and notification player. Works with Bluetooth, headset buttons and Android Auto via Media3 MediaSession.
 - Shuffle, repeat one/all, queue editing (jump to or remove a track), play next, add to queue
 - Sleep timer, sharing
+- **Lyrics.** Time-synced lyrics (from LRCLIB) that follow the song: the current line is highlighted and you can tap any line to jump there. Falls back to YouTube Music's lyrics, and results are cached for offline use.
+- **Dislike.** Hide a song everywhere (search, home, radio, Liked, playlists). If it's playing, it's skipped. Library → Disliked songs lists everything you've hidden, and you can undo one or restore them all.
+- **Content filter.** Thai / Thailand content is blocked everywhere: Thai-script titles, Thai keywords, Thai labels and artists. It applies to search queries, suggestions, results, the home feed, radio/autoplay and YouTube Music lists. The rules live in `data/filter/ContentFilter.kt`.
 
 **Offline**
 - **Download any song.** It is saved to private app storage and plays with no connection.

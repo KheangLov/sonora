@@ -1,7 +1,14 @@
 package com.sonora.music.ui.account
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Message
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -17,10 +24,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.sonora.music.AppGraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private const val MUSIC_HOME = "https://music.youtube.com/"
 
 private const val LOGIN_URL =
     "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&passive=true" +
@@ -34,6 +45,7 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var finished by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
 
     fun onSignedIn(cookie: String) {
         if (finished) return
@@ -47,6 +59,16 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
             Toast.makeText(context, if (name != null) "Signed in as $name" else "Signed in", Toast.LENGTH_SHORT).show()
         }
         onDone()
+    }
+
+    /** Done as soon as any YouTube page has the session cookie, wherever Google sent us. */
+    fun checkSignedIn(url: String?): Boolean {
+        val host = url?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: return false
+        if (!host.endsWith("youtube.com")) return false
+        val cookie = CookieManager.getInstance().getCookie(MUSIC_HOME) ?: return false
+        if ("SAPISID" !in cookie) return false
+        onSignedIn(cookie)
+        return true
     }
 
     Column(
@@ -63,6 +85,10 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // Start over with a clean session if Google shows an error page.
+            TextButton(onClick = {
+                CookieManager.getInstance().removeAllCookies { webView?.loadUrl(LOGIN_URL) }
+            }) { Text("Restart") }
         }
         if (loading) {
             LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary)
@@ -71,26 +97,90 @@ fun LoginScreen(bottomPadding: Dp, onDone: () -> Unit) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             factory = { ctx ->
                 WebView(ctx).apply {
+                    webView = this
                     val cookies = CookieManager.getInstance()
                     cookies.setAcceptCookie(true)
                     cookies.setAcceptThirdPartyCookies(this, true)
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
-                    // Google refuses sign-in from "embedded" browsers; present as regular Chrome.
-                    settings.userAgentString = settings.userAgentString.replace("; wv", "")
+                    // Pop-ups / "open in new window" would otherwise escape to another app.
+                    settings.setSupportMultipleWindows(false)
+                    settings.javaScriptCanOpenWindowsAutomatically = false
+                    // Google refuses sign-in from "embedded" browsers ("This browser or app may not be secure").
+                    // Look like the phone's real Chrome: same engine + version, without the WebView "; wv" marker…
+                    settings.userAgentString = WebSettings.getDefaultUserAgent(ctx).replace("; wv", "")
+                    // …and don't announce the app's package name in the X-Requested-With header.
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                        WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+                    }
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?) = false
+                    }
                     webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                            handleUrl(view, request.url)
+
+                        @Deprecated("Deprecated in Java")
+                        override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
+                            handleUrl(view, Uri.parse(url))
+
+                        private fun handleUrl(view: WebView, uri: Uri): Boolean {
+                            when (uri.scheme?.lowercase()) {
+                                "http", "https" -> {
+                                    // Never let youtube.com / m.youtube.com take over; finish on music.youtube.com instead.
+                                    val host = uri.host.orEmpty()
+                                    if (checkSignedIn(uri.toString())) return true
+                                    if (host == "m.youtube.com" || host == "youtu.be") {
+                                        view.loadUrl(MUSIC_HOME)
+                                        return true
+                                    }
+                                    return false
+                                }
+                                "intent" -> {
+                                    // intent://…#Intent;package=com.google.android.youtube;… → stay here.
+                                    val fallback = runCatching {
+                                        Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
+                                            .getStringExtra("browser_fallback_url")
+                                    }.getOrNull()
+                                    view.loadUrl(fallback?.takeIf { it.startsWith("https://") } ?: MUSIC_HOME)
+                                    return true
+                                }
+                                // vnd.youtube:, youtube:, market:, android-app: … → block, stay in Sonora.
+                                else -> {
+                                    if (!checkSignedIn(view.url)) view.loadUrl(MUSIC_HOME)
+                                    return true
+                                }
+                            }
+                        }
+
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            loading = true
+                            checkSignedIn(url)
+                        }
+
+                        override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                            checkSignedIn(url)
+                        }
+
                         override fun onPageFinished(view: WebView?, url: String?) {
                             loading = false
-                            if (url != null && url.startsWith("https://music.youtube.com")) {
-                                val cookie = cookies.getCookie("https://music.youtube.com")
-                                if (cookie != null && "SAPISID" in cookie) onSignedIn(cookie)
+                            if (checkSignedIn(url)) return
+                            // Signed in on youtube.com but not yet on music.youtube.com: hop over.
+                            val host = url?.let { Uri.parse(it).host }.orEmpty()
+                            if (host.endsWith("youtube.com") && host != "music.youtube.com" && "/signin" !in url.orEmpty()) {
+                                view?.loadUrl(MUSIC_HOME)
                             }
                         }
                     }
                     loadUrl(LOGIN_URL)
                 }
             },
-            onRelease = { it.destroy() },
+            onRelease = {
+                webView = null
+                it.stopLoading()
+                it.destroy()
+            },
         )
     }
 }

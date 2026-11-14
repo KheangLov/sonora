@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MusicNote
@@ -37,7 +38,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sonora.music.AppGraph
+import com.sonora.music.data.filter.ContentFilter
 import com.sonora.music.data.model.Song
+import com.sonora.music.ui.components.rememberVisibleSongs
 import com.sonora.music.ui.components.EmptyState
 import com.sonora.music.ui.components.SkeletonRow
 import com.sonora.music.ui.components.SongActionsSheet
@@ -66,6 +69,7 @@ sealed interface SearchResults {
         val loadMoreFailed: Boolean = false,
         val correctedTo: String? = null,
         val didYouMean: String? = null,
+        val blocked: Boolean = false,
     ) : SearchResults
 }
 
@@ -79,7 +83,7 @@ class SearchViewModel : ViewModel() {
     private var searchJob: Job? = null
 
     val history: StateFlow<List<String>> = lib.searches.observeRecent()
-        .map { list -> list.map { it.term } }
+        .map { list -> list.map { it.term }.filterNot(ContentFilter::blocksQuery) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val suggestions: StateFlow<List<String>> = query
@@ -104,7 +108,7 @@ class SearchViewModel : ViewModel() {
         searchJob?.cancel()
         session = null
         searchJob = viewModelScope.launch {
-            lib.addSearch(term)
+            if (!ContentFilter.blocksQuery(term)) lib.addSearch(term)
             results.value = runCatching { repo.startSearch(term) }.fold(
                 { r ->
                     session = r.session
@@ -113,6 +117,7 @@ class SearchViewModel : ViewModel() {
                         hasMore = r.session.hasMore,
                         correctedTo = r.correctedTo,
                         didYouMean = r.didYouMean,
+                        blocked = r.blocked,
                     )
                 },
                 { SearchResults.Error },
@@ -187,6 +192,7 @@ fun SearchScreen(bottomPadding: Dp, vm: SearchViewModel = viewModel()) {
         }
 
         val showResults = submitted != null && submitted == query
+        val visibleResults = rememberVisibleSongs((results as? SearchResults.Success)?.songs.orEmpty())
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomPadding + 16.dp)) {
             when {
                 showResults -> when (val r = results) {
@@ -198,7 +204,11 @@ fun SearchScreen(bottomPadding: Dp, vm: SearchViewModel = viewModel()) {
                         }
                     }
                     is SearchResults.Success ->
-                        if (r.songs.isEmpty()) {
+                        if (r.blocked) {
+                            item {
+                                EmptyState(Icons.Rounded.Block, "This search is blocked", "Thai / Thailand content is filtered out of Sonora.")
+                            }
+                        } else if (visibleResults.isEmpty() && !r.hasMore) {
                             item {
                                 EmptyState(Icons.Rounded.SearchOff, "No results for \"$query\"", "Try different keywords or check the spelling.")
                             }
@@ -226,9 +236,13 @@ fun SearchScreen(bottomPadding: Dp, vm: SearchViewModel = viewModel()) {
                                     }
                                 }
                             }
-                            itemsIndexed(r.songs, key = { _, s -> "r_${s.id}" }) { i, s ->
+                            if (visibleResults.isEmpty() && r.hasMore && !r.loadingMore && !r.loadMoreFailed) {
+                                // Everything on this page was filtered out — fetch the next one.
+                                item(key = "autoload") { LaunchedEffect(r.songs.size) { vm.loadMore() } }
+                            }
+                            itemsIndexed(visibleResults, key = { _, s -> "r_${s.id}" }) { i, s ->
                                 // Infinite scroll: prefetch when 6 rows from the end
-                                if (i >= r.songs.size - 6 && r.hasMore && !r.loadingMore && !r.loadMoreFailed) {
+                                if (i >= visibleResults.size - 6 && r.hasMore && !r.loadingMore && !r.loadMoreFailed) {
                                     LaunchedEffect(r.songs.size) { vm.loadMore() }
                                 }
                                 SongRow(
